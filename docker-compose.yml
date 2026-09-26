@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  notification_db:
+    image: postgres:16
+    container_name: postgres-notification
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: ${NOTIFICATION_DB_USER}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  notification_data:
