@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: ${INVENTORY_DB_URL}
+    username: ${INVENTORY_DB_USER}
+    password: ${INVENTORY_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.yml
+server:
+  port: 8081
