@@ -36,6 +36,6 @@ public class Product {
     @Column(name = "price", precision = 19, scale = 2)
     private BigDecimal price;
 
-    @Column(name = "sale", precision = 19, scale = 2)
+    @Column(name = "sale", precision = 5, scale = 2)
     private BigDecimal sale;
 }
