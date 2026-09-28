@@ -27,6 +27,20 @@ services:
       - inventory_data:/var/lib/postgresql/data
     restart: always
 
+  order_db:
+    image: postgres:16
+    container_name: postgres-order
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: ${ORDER_DB_USER}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD}
+    ports:
+      - "5434:5432"
+    volumes:
+      - order_data:/var/lib/postgresql/data
+    restart: always
+
 volumes:
   notification_data:
   inventory_data:
+  order_data:
