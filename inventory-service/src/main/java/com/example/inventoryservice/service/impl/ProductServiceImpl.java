@@ -61,15 +61,27 @@ public class ProductServiceImpl implements ProductService {
                         .build());
             } else {
                 Product product = optionalProduct.get();
+                boolean isAvailable = product.getQuantity() >= productItem.getQuantity();
                 productAvailabilities.add(ProductAvailability.newBuilder()
                                 .setId(product.getId().toString())
                                 .setName(product.getName())
                                 .setPrice(product.getPrice().doubleValue())
                                 .setSale(product.getSale().doubleValue())
                                 .setAvailableQuantity(product.getQuantity())
+                                .setIsAvailable(isAvailable)
                         .build());
             }
         }
         return productAvailabilities;
+    }
+
+    @Override
+    @Transactional
+    public void writeOffProducts(List<ProductItem> productItems) {
+        for (ProductItem productItem : productItems) {
+            Product product = productRepository.findById(UUID.fromString(productItem.getId())).orElseThrow(() ->
+                    new ProductNotFoundException("Product with id " + productItem.getId() + " not found"));
+            product.setQuantity(product.getQuantity() - productItem.getQuantity());
+        }
     }
 }

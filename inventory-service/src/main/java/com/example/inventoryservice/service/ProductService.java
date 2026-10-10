@@ -21,4 +21,6 @@ public interface ProductService {
     void deleteProduct(UUID id);
 
     List<ProductAvailability> checkAvailability(List<ProductItem> productItems);
+
+    void writeOffProducts(List<ProductItem> productItems);
 }
