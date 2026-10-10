@@ -1,4 +1,6 @@
 package com.example.orderservice.dto;
 
-public record RefreshTokenRequest() {
+public record RefreshTokenRequest(
+        String refreshToken
+) {
 }
