@@ -1,11 +1,18 @@
 package com.example.orderservice.mapper;
 
-import com.example.orderservice.dto.CreateUserRequest;
+import com.example.orderservice.dto.UserResponse;
 import com.example.orderservice.entity.User;
+import com.example.orderservice.entity.util.Role;
 import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring")
 public interface UserMapper {
 
-    User toUser(CreateUserRequest createUserRequest);
+    UserResponse toUserResponse(User user);
+
+    User toUser(String email,
+                String username,
+                String password,
+                Role role
+    );
 }
