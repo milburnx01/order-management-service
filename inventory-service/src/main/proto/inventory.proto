@@ -3,9 +3,13 @@ syntax = "proto3";
 option java_package = "com.example.inventoryservice.grpc";
 option java_multiple_files = true;
 
+import "google/protobuf/empty.proto";
+
 service InventoryService {
   rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse) {}
+  rpc WriteOffProducts(WriteOffRequest) returns (google.protobuf.Empty) {}
 }
+
 
 message ProductItem {
   string id = 1;
@@ -22,8 +26,13 @@ message ProductAvailability {
   double price = 3;
   double sale = 4;
   int32 available_quantity = 5;
+  bool isAvailable = 6;
 }
 
 message CheckAvailabilityResponse {
   repeated ProductAvailability product_availabilities = 1;
+}
+
+message WriteOffRequest {
+  repeated ProductItem items = 1;
 }

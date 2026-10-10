@@ -1,6 +1,7 @@
 package com.example.inventoryservice.grpc;
 
 import com.example.inventoryservice.service.ProductService;
+import com.google.protobuf.Empty;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.grpc.server.service.GrpcService;
@@ -22,4 +23,13 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    @Override
+    public void writeOffProducts(WriteOffRequest request, StreamObserver<Empty> responseObserver) {
+        productService.writeOffProducts(request.getItemsList());
+        responseObserver.onNext(Empty.getDefaultInstance());
+        responseObserver.onCompleted();
+    }
+
+
 }
