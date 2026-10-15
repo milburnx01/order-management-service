@@ -1,35 +1,79 @@
-version: '3.8'
-
 services:
-  notification_db:
-    image: postgres:16
-    container_name: postgres-notification
-    environment:
-      POSTGRES_DB: notification_db
-      POSTGRES_USER: ${NOTIFICATION_DB_USER}
-      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: order-service
     ports:
-      - "5432:5432"
-    volumes:
-      - notification_data:/var/lib/postgresql/data
+      - "8080:8080"
+    environment:
+      ORDER_DB_URL: jdbc:postgresql://order_db:5432/order_db
+      ORDER_DB_USER: ${ORDER_DB_USER}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
+
+      JWT_SECRET_ACCESS: ${JWT_SECRET_ACCESS}
+      JWT_SECRET_REFRESH: ${JWT_SECRET_REFRESH}
+
+      GRPC_INVENTORY_TARGET: ${GRPC_INVENTORY_TARGET}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+    depends_on:
+      - order_db
+      - inventory-service
+      - kafka
+
     restart: always
 
-  inventory_db:
-    image: postgres:16
-    container_name: postgres-inventory
-    environment:
-      POSTGRES_DB: inventory_db
-      POSTGRES_USER: ${INVENTORY_DB_USER}
-      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD}
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: inventory-service
     ports:
-      - "5433:5432"
-    volumes:
-      - inventory_data:/var/lib/postgresql/data
+      - "8081:8081"
+      - "9090:9090"
+    environment:
+      INVENTORY_DB_URL: jdbc:postgresql://inventory_db:5432/inventory_db
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+
+      SPRING_GRPC_SERVER_PORT: 9090
+
+    depends_on:
+      - inventory_db
+
     restart: always
+
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: notification-service
+    ports:
+      - "8082:8082"
+    environment:
+      NOTIFICATION_DB_URL: jdbc:postgresql://notification_db:5432/notification_db
+      NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_PROPERTIES_SPRING_JSON_VALUE_DEFAULT_TYPE: com.example.notificationservice.dto.OrderCreatedEvent
+
+    depends_on:
+      - notification_db
+      - kafka
+
+    restart: always
+
 
   order_db:
     image: postgres:16
-    container_name: postgres-order
     environment:
       POSTGRES_DB: order_db
       POSTGRES_USER: ${ORDER_DB_USER}
@@ -38,30 +82,62 @@ services:
       - "5434:5432"
     volumes:
       - order_data:/var/lib/postgresql/data
-    restart: always
+
+
+  inventory_db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: ${INVENTORY_DB_USER}
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+
+
+  notification_db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: ${NOTIFICATION_DB_USER}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+
 
   kafka:
     image: confluentinc/cp-kafka:7.8.1
-    container_name: kafka
     ports:
-      - "9092:9092"
+      - "9094:9094"
     environment:
       KAFKA_NODE_ID: 0
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+
       KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
     volumes:
       - kafka_data:/var/lib/kafka/data
+
     restart: always
 
+
 volumes:
-  notification_data:
-  inventory_data:
   order_data:
+  inventory_data:
+  notification_data:
   kafka_data:

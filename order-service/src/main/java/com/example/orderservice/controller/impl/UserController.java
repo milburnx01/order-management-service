@@ -39,7 +39,7 @@ public class UserController implements UserApi {
 
     @PostMapping
     @Override
-    public ResponseEntity<UserResponse> createUserByAdmin(AdminCreateUserRequest adminCreateUserRequest) {
+    public ResponseEntity<UserResponse> createUserByAdmin(@RequestBody AdminCreateUserRequest adminCreateUserRequest) {
         UserResponse userResponse = userService.createUserByAdmin(adminCreateUserRequest);
         URI location = UriComponentsBuilder
                 .fromPath("/api/users/{id}")
@@ -50,7 +50,7 @@ public class UserController implements UserApi {
 
     @PutMapping("/{id}")
     @Override
-    public ResponseEntity<Void> updateUser(@PathVariable("id") UUID id, UpdateUserRequest createUserRequest) {
+    public ResponseEntity<Void> updateUser(@PathVariable("id") UUID id, @RequestBody UpdateUserRequest createUserRequest) {
         userService.updateUser(id, createUserRequest);
         return ResponseEntity.noContent().build();
     }

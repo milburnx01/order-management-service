@@ -4,6 +4,15 @@ spring:
     url: ${NOTIFICATION_DB_URL}
     username: ${NOTIFICATION_DB_USER}
     password: ${NOTIFICATION_DB_PASSWORD}
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-service
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        "[spring.json.use.type.headers]": false
+        "[spring.json.value.default.type]": com.example.notificationservice.dto.OrderCreatedEvent
+
   jpa:
     hibernate:
       ddl-auto: none

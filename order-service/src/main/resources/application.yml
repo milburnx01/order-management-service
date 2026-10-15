@@ -8,13 +8,16 @@ spring:
     change-log: classpath:/db/changelog/db.changelog-master.yaml
   grpc:
     client:
-      inventory:
-        target: ${GRPC_INVENTORY_TARGET}
+      channel:
+        inventory:
+          target: ${GRPC_INVENTORY_TARGET}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        "[spring.json.add.type.headers]": false
 jwt:
   secret:
     access: ${JWT_SECRET_ACCESS}

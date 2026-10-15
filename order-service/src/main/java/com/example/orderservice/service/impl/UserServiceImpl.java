@@ -5,14 +5,17 @@ import com.example.orderservice.dto.CreateUserRequest;
 import com.example.orderservice.dto.UpdateUserRequest;
 import com.example.orderservice.dto.UserResponse;
 import com.example.orderservice.entity.util.Role;
+import com.example.orderservice.exception.AuthException;
 import com.example.orderservice.exception.UserNotFoundException;
 import com.example.orderservice.entity.User;
 import com.example.orderservice.mapper.UserMapper;
 import com.example.orderservice.repository.UserRepository;
 import com.example.orderservice.service.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,7 +81,12 @@ public class UserServiceImpl implements UserService {
 
     private UserResponse createUser(String email, String username, String password, Role role) {
         User user = userMapper.toUser(email, username, passwordEncoder.encode(password), role);
-        return userMapper.toUserResponse(userRepository.save(user));
+        try {
+            User savedUser = userRepository.saveAndFlush(user);
+            return userMapper.toUserResponse(savedUser);
+        } catch (DataIntegrityViolationException e) {
+            throw new AuthException("User with username or email already exists");
+        }
     }
 
 }

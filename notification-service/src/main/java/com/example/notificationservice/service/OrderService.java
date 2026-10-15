@@ -1,5 +1,6 @@
 package com.example.notificationservice.service;
 
+import com.example.notificationservice.dto.OrderCreatedEvent;
 import com.example.notificationservice.dto.OrderResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -13,4 +14,6 @@ public interface OrderService {
     Page<OrderResponse> findAllByOrderId(UUID orderId, Pageable pageable);
 
     Page<OrderResponse> findAllByUserId(UUID userId, Pageable pageable);
+
+    void createOrder(OrderCreatedEvent orderCreatedEvent);
 }
