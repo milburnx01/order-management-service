@@ -11,9 +11,11 @@ import com.example.orderservice.service.AuthService;
 import com.example.orderservice.service.UserService;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -24,6 +26,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public JwtResponse login(JwtRequest request) {
+        log.info("Login attempt, username={}", request.username());
         try {
             User user = userService.findUserByUsername(request.username());
 
@@ -34,8 +37,9 @@ public class AuthServiceImpl implements AuthService {
             String accessToken = jwtProvider.generateAccessToken(user);
             String refreshToken = jwtProvider.generateRefreshToken(user);
 
-            return new JwtResponse(accessToken, refreshToken);
-
+            JwtResponse response = new JwtResponse(accessToken, refreshToken);
+            log.info("Login successful, username={}", request.username());
+            return response;
         } catch (UserNotFoundException e) {
             throw new AuthException("Invalid username or password");
         }
@@ -43,13 +47,16 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public JwtResponse getAccessToken(RefreshTokenRequest refreshTokenRequest) {
+        log.info("Access token refresh requested");
         String refreshToken = refreshTokenRequest.refreshToken();
         if (refreshToken != null && jwtProvider.validateRefreshToken(refreshToken)) {
             Claims claims = jwtProvider.getRefreshClaims(refreshToken);
             String username = claims.getSubject();
             User user = userService.findUserByUsername(username);
             String accessToken = jwtProvider.generateAccessToken(user);
-            return new JwtResponse(accessToken, refreshToken);
+            JwtResponse response = new JwtResponse(accessToken, refreshToken);
+            log.info("Access token refreshed successfully, username={}", username);
+            return response;
         } else {
             throw new AuthException("Invalid refresh token");
         }

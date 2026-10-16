@@ -9,7 +9,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      ORDER_DB_URL: jdbc:postgresql://order_db:5432/order_db
+      ORDER_DB_URL: ${ORDER_DB_URL}
       ORDER_DB_USER: ${ORDER_DB_USER}
       ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
 
@@ -37,7 +37,7 @@ services:
       - "8081:8081"
       - "9090:9090"
     environment:
-      INVENTORY_DB_URL: jdbc:postgresql://inventory_db:5432/inventory_db
+      INVENTORY_DB_URL: ${INVENTORY_DB_URL}
       INVENTORY_DB_USER: ${INVENTORY_DB_USER}
       INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
 
@@ -58,7 +58,7 @@ services:
     ports:
       - "8082:8082"
     environment:
-      NOTIFICATION_DB_URL: jdbc:postgresql://notification_db:5432/notification_db
+      NOTIFICATION_DB_URL: ${NOTIFICATION_DB_URL}
       NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER}
       NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
 

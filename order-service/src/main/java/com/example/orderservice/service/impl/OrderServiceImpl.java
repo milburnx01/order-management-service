@@ -12,6 +12,7 @@ import com.example.orderservice.kafka.OrderKafkaProducer;
 import com.example.orderservice.service.OrderService;
 import com.example.orderservice.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
@@ -32,7 +33,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest createOrderRequest) {
-
+        log.info("Creating order, items={}", createOrderRequest.items());
         List<ProductAvailability> productAvailabilities = inventoryClient.checkAvailability(createOrderRequest);
         List<String> unavailableProductIds = new ArrayList<>();
         for (ProductAvailability productAvailability : productAvailabilities) {
@@ -79,7 +80,12 @@ public class OrderServiceImpl implements OrderService {
                 .build();
 
         orderKafkaProducer.sendOrder(orderResponse);
-
+        log.info(
+                "Order created successfully, orderId={}, userId={}, totalPrice={}",
+                orderResponse.orderId(),
+                orderResponse.userId(),
+                orderResponse.totalPrice()
+        );
         return orderResponse;
     }
 }
