@@ -4,6 +4,7 @@ import com.example.notificationservice.dto.OrderResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.UUID;
@@ -15,8 +16,8 @@ public interface OrderApi {
     Page<OrderResponse> findAll(@RequestParam int page, @RequestParam int size);
 
     @Operation(summary = "Все покупки по заказу", description = "Позволяет найти все покупки, относящиеся к одному заказу")
-    Page<OrderResponse> findAllByOrderId(@RequestParam("orderId") UUID orderId, @RequestParam int page, @RequestParam int size);
+    Page<OrderResponse> findAllByOrderId(@PathVariable("orderId") UUID orderId, @RequestParam int page, @RequestParam int size);
 
     @Operation(summary = "Все покупки пользователя", description = "Позволяет найти все покупки конкретного пользователя")
-    Page<OrderResponse> findAllByUserId(@RequestParam("userId") UUID userId, @RequestParam int page, @RequestParam int size);
+    Page<OrderResponse> findAllByUserId(@PathVariable("userId") UUID userId, @RequestParam int page, @RequestParam int size);
 }
