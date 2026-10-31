@@ -1,4 +1,3 @@
-
 package com.example.inventoryservice.service.impl;
 
 import com.example.inventoryservice.dto.CreateProductRequest;
@@ -8,6 +7,7 @@ import com.example.inventoryservice.exception.ProductNotFoundException;
 import com.example.inventoryservice.grpc.ProductAvailability;
 import com.example.inventoryservice.grpc.ProductItem;
 import com.example.inventoryservice.mapper.ProductMapper;
+import com.example.inventoryservice.repository.InventoryOperationRepository;
 import com.example.inventoryservice.repository.ProductRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +39,9 @@ class ProductServiceImplTest {
 
     @Mock
     private ProductMapper productMapper;
+
+    @Mock
+    private InventoryOperationRepository inventoryOperationRepository;
 
     @InjectMocks
     private ProductServiceImpl productService;
@@ -298,6 +301,7 @@ class ProductServiceImplTest {
     @Test
     void writeOffProducts_ShouldDecreaseProductQuantity() {
         // given
+        UUID orderId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
 
         Product product = new Product(
@@ -313,21 +317,26 @@ class ProductServiceImplTest {
                 .setQuantity(3)
                 .build();
 
-        when(productRepository.findById(productId))
+        when(inventoryOperationRepository.registerOperation(orderId))
+                .thenReturn(1);
+
+        when(productRepository.findByIdForUpdate(productId))
                 .thenReturn(Optional.of(product));
 
         // when
-        productService.writeOffProducts(List.of(item));
+        productService.writeOffProducts(orderId, List.of(item));
 
         // then
         assertThat(product.getQuantity()).isEqualTo(7);
 
-        verify(productRepository).findById(productId);
+        verify(inventoryOperationRepository).registerOperation(orderId);
+        verify(productRepository).findByIdForUpdate(productId);
     }
 
     @Test
     void writeOffProducts_ShouldThrowException_WhenProductNotFound() {
         // given
+        UUID orderId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
 
         ProductItem item = ProductItem.newBuilder()
@@ -335,16 +344,20 @@ class ProductServiceImplTest {
                 .setQuantity(3)
                 .build();
 
-        when(productRepository.findById(productId))
+        when(inventoryOperationRepository.registerOperation(orderId))
+                .thenReturn(1);
+
+        when(productRepository.findByIdForUpdate(productId))
                 .thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(
-                () -> productService.writeOffProducts(List.of(item))
+                () -> productService.writeOffProducts(orderId, List.of(item))
         )
                 .isInstanceOf(ProductNotFoundException.class)
                 .hasMessage("Product with id " + productId + " not found");
 
-        verify(productRepository).findById(productId);
+        verify(inventoryOperationRepository).registerOperation(orderId);
+        verify(productRepository).findByIdForUpdate(productId);
     }
 }

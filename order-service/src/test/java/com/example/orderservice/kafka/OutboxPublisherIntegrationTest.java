@@ -1,7 +1,11 @@
+
 package com.example.orderservice.kafka;
 
 import com.example.orderservice.dto.OrderItemResponse;
 import com.example.orderservice.dto.OrderResponse;
+import com.example.orderservice.entity.OutboxEvent;
+import com.example.orderservice.entity.util.OutboxStatus;
+import com.example.orderservice.repository.OutboxEventRepository;
 import com.jayway.jsonpath.JsonPath;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -16,7 +20,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -25,6 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -39,7 +43,7 @@ import static org.awaitility.Awaitility.await;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
-class OrderKafkaProducerIntegrationTest {
+class OutboxPublisherIntegrationTest {
 
     @Container
     private static final KafkaContainer kafka =
@@ -51,25 +55,34 @@ class OrderKafkaProducerIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+        registry.add(
+                "spring.kafka.bootstrap-servers",
+                kafka::getBootstrapServers
+        );
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
     }
 
     @Autowired
-    private OrderKafkaProducer orderKafkaProducer;
+    private OutboxPublisher outboxPublisher;
 
     @Autowired
-    private KafkaTemplate<String, OrderResponse> kafkaTemplate;
+    private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     private KafkaConsumer<String, String> consumer;
 
     @BeforeAll
     static void createTopic() throws Exception {
         try (AdminClient admin = AdminClient.create(
-                Map.of("bootstrap.servers", kafka.getBootstrapServers()))) {
-
+                Map.of(
+                        "bootstrap.servers",
+                        kafka.getBootstrapServers()
+                )
+        )) {
             admin.createTopics(List.of(
                     new NewTopic("orders", 1, (short) 1)
             )).all().get();
@@ -78,6 +91,8 @@ class OrderKafkaProducerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        outboxEventRepository.deleteAll();
+
         consumer = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
                 kafka.getBootstrapServers(),
@@ -101,11 +116,13 @@ class OrderKafkaProducerIntegrationTest {
 
     @AfterEach
     void tearDown() {
-        consumer.close();
+        if (consumer != null) {
+            consumer.close();
+        }
     }
 
     @Test
-    void sendOrder_ShouldPublishMessageToKafka() {
+    void publishPendingEvents_ShouldPublishMessageToKafka() {
         // given
         UUID orderId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -117,9 +134,13 @@ class OrderKafkaProducerIntegrationTest {
                 .totalPrice(BigDecimal.ZERO)
                 .build();
 
+        OutboxEvent event = saveOutboxEvent(order);
+
+        assertThat(event.getStatus())
+                .isEqualTo(OutboxStatus.PENDING);
+
         // when
-        orderKafkaProducer.sendOrder(order);
-        kafkaTemplate.flush();
+        outboxPublisher.publishPendingEvents();
 
         ConsumerRecord<String, String> record =
                 KafkaTestUtils.getSingleRecord(
@@ -128,19 +149,29 @@ class OrderKafkaProducerIntegrationTest {
                         Duration.ofSeconds(15)
                 );
 
-        // then
+        // then: сообщение пришло в Kafka
         assertThat(record.topic()).isEqualTo("orders");
-        assertThat(record.value()).isNotBlank();
+        assertThat(record.key()).isEqualTo(orderId.toString());
 
-        assertThat(JsonPath.<String>read(record.value(), "$.orderId"))
-                .isEqualTo(orderId.toString());
+        assertThat(JsonPath.<String>read(
+                record.value(), "$.orderId"
+        )).isEqualTo(orderId.toString());
 
-        assertThat(JsonPath.<String>read(record.value(), "$.userId"))
-                .isEqualTo(userId.toString());
+        assertThat(JsonPath.<String>read(
+                record.value(), "$.userId"
+        )).isEqualTo(userId.toString());
+
+        // И статус события изменился в PostgreSQL
+        OutboxEvent savedEvent = outboxEventRepository
+                .findById(event.getId())
+                .orElseThrow();
+
+        assertThat(savedEvent.getStatus())
+                .isEqualTo(OutboxStatus.SENT);
     }
 
     @Test
-    void sendOrder_ShouldPreserveOrderData() {
+    void publishPendingEvents_ShouldPreserveOrderData() {
         // given
         UUID orderId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -162,9 +193,10 @@ class OrderKafkaProducerIntegrationTest {
                 .totalPrice(new BigDecimal("1800.00"))
                 .build();
 
+        saveOutboxEvent(order);
+
         // when
-        orderKafkaProducer.sendOrder(order);
-        kafkaTemplate.flush();
+        outboxPublisher.publishPendingEvents();
 
         ConsumerRecord<String, String> record =
                 KafkaTestUtils.getSingleRecord(
@@ -182,14 +214,17 @@ class OrderKafkaProducerIntegrationTest {
         assertThat(JsonPath.<String>read(json, "$.userId"))
                 .isEqualTo(userId.toString());
 
-        assertThat(JsonPath.<String>read(json, "$.items[0].productId"))
-                .isEqualTo(productId.toString());
+        assertThat(JsonPath.<String>read(
+                json, "$.items[0].productId"
+        )).isEqualTo(productId.toString());
 
-        assertThat(JsonPath.<String>read(json, "$.items[0].productName"))
-                .isEqualTo("Laptop");
+        assertThat(JsonPath.<String>read(
+                json, "$.items[0].productName"
+        )).isEqualTo("Laptop");
 
-        assertThat(JsonPath.<Integer>read(json, "$.items[0].quantity"))
-                .isEqualTo(2);
+        assertThat(JsonPath.<Integer>read(
+                json, "$.items[0].quantity"
+        )).isEqualTo(2);
 
         assertThat(new BigDecimal(
                 JsonPath.read(json, "$.items[0].price").toString()
@@ -209,7 +244,7 @@ class OrderKafkaProducerIntegrationTest {
     }
 
     @Test
-    void sendOrder_ShouldPublishMultipleOrders() {
+    void publishPendingEvents_ShouldPublishMultipleOrders() {
         // given
         UUID firstOrderId = UUID.randomUUID();
         UUID secondOrderId = UUID.randomUUID();
@@ -228,10 +263,11 @@ class OrderKafkaProducerIntegrationTest {
                 .totalPrice(new BigDecimal("200.00"))
                 .build();
 
+        OutboxEvent firstEvent = saveOutboxEvent(firstOrder);
+        OutboxEvent secondEvent = saveOutboxEvent(secondOrder);
+
         // when
-        orderKafkaProducer.sendOrder(firstOrder);
-        orderKafkaProducer.sendOrder(secondOrder);
-        kafkaTemplate.flush();
+        outboxPublisher.publishPendingEvents();
 
         List<ConsumerRecord<String, String>> receivedRecords =
                 new ArrayList<>();
@@ -248,14 +284,36 @@ class OrderKafkaProducerIntegrationTest {
         // then
         assertThat(receivedRecords)
                 .extracting(record ->
-                        JsonPath.<String>read(record.value(), "$.orderId"))
+                        JsonPath.<String>read(
+                                record.value(), "$.orderId"
+                        )
+                )
                 .containsExactlyInAnyOrder(
                         firstOrderId.toString(),
                         secondOrderId.toString()
                 );
 
-        assertThat(receivedRecords)
-                .extracting(ConsumerRecord::topic)
-                .containsOnly("orders");
+        assertThat(outboxEventRepository
+                .findById(firstEvent.getId())
+                .orElseThrow()
+                .getStatus()
+        ).isEqualTo(OutboxStatus.SENT);
+
+        assertThat(outboxEventRepository
+                .findById(secondEvent.getId())
+                .orElseThrow()
+                .getStatus()
+        ).isEqualTo(OutboxStatus.SENT);
+    }
+
+    private OutboxEvent saveOutboxEvent(OrderResponse order) {
+        OutboxEvent event = new OutboxEvent();
+
+        event.setOrderId(order.orderId());
+        event.setTopic("orders");
+        event.setPayload(objectMapper.writeValueAsString(order));
+        event.setStatus(OutboxStatus.PENDING);
+
+        return outboxEventRepository.saveAndFlush(event);
     }
 }

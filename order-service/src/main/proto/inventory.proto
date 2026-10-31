@@ -34,4 +34,5 @@ message CheckAvailabilityResponse {
 
 message WriteOffRequest {
   repeated ProductItem items = 1;
+  string order_id = 2;
 }

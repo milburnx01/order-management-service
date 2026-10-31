@@ -1,4 +1,3 @@
-
 package com.example.notificationservice.service.impl;
 
 import com.example.notificationservice.dto.OrderCreatedEvent;
@@ -7,6 +6,7 @@ import com.example.notificationservice.dto.OrderResponse;
 import com.example.notificationservice.entity.Order;
 import com.example.notificationservice.mapper.OrderMapper;
 import com.example.notificationservice.repository.OrderRepository;
+import com.example.notificationservice.repository.ProcessedOrderIdRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -39,6 +39,9 @@ class OrderServiceImplTest {
 
     @Mock
     private OrderMapper orderMapper;
+
+    @Mock
+    private ProcessedOrderIdRepository processedOrderIdRepository;
 
     @InjectMocks
     private OrderServiceImpl orderService;
@@ -264,6 +267,11 @@ class OrderServiceImplTest {
                 new BigDecimal("2100.00")
         );
 
+        // Заказ ещё не обрабатывался.
+        // Разрешаем сервису сохранить его.
+        when(processedOrderIdRepository.insertIfAbsent(orderId))
+                .thenReturn(1);
+
         ArgumentCaptor<Order> orderCaptor =
                 ArgumentCaptor.forClass(Order.class);
 
@@ -271,6 +279,7 @@ class OrderServiceImplTest {
         orderService.createOrder(event);
 
         // then
+        verify(processedOrderIdRepository).insertIfAbsent(orderId);
         verify(orderRepository, times(2)).save(orderCaptor.capture());
 
         List<Order> savedOrders = orderCaptor.getAllValues();
@@ -303,17 +312,23 @@ class OrderServiceImplTest {
     @Test
     void createOrder_ShouldNotSaveAnything_WhenItemsAreEmpty() {
         // given
+        UUID orderId = UUID.randomUUID();
+
         OrderCreatedEvent event = new OrderCreatedEvent(
-                UUID.randomUUID(),
+                orderId,
                 UUID.randomUUID(),
                 List.of(),
                 BigDecimal.ZERO
         );
 
+        when(processedOrderIdRepository.insertIfAbsent(orderId))
+                .thenReturn(1);
+
         // when
         orderService.createOrder(event);
 
         // then
+        verify(processedOrderIdRepository).insertIfAbsent(orderId);
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -340,6 +355,9 @@ class OrderServiceImplTest {
                 new BigDecimal("1800.00")
         );
 
+        when(processedOrderIdRepository.insertIfAbsent(orderId))
+                .thenReturn(1);
+
         when(orderRepository.save(any(Order.class)))
                 .thenThrow(new DataIntegrityViolationException(
                         "Failed to save order"
@@ -350,6 +368,7 @@ class OrderServiceImplTest {
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessage("Failed to save order");
 
+        verify(processedOrderIdRepository).insertIfAbsent(orderId);
         verify(orderRepository).save(any(Order.class));
     }
 }

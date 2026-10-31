@@ -1,18 +1,17 @@
 package com.example.orderservice.controller.impl;
 
 import com.example.orderservice.dto.CreateOrderRequest;
-import com.example.orderservice.dto.OrderResponse;
 import com.example.orderservice.dto.ProductItem;
 import com.example.orderservice.entity.User;
 import com.example.orderservice.entity.util.Role;
-import com.example.orderservice.exception.OrderException;
 import com.example.orderservice.grpc.InventoryClient;
 import com.example.orderservice.grpc.ProductAvailability;
-import com.example.orderservice.kafka.OrderKafkaProducer;
+import com.example.orderservice.repository.OrderRepository;
+import com.example.orderservice.repository.OutboxEventRepository;
 import com.example.orderservice.repository.UserRepository;
+import io.grpc.Status;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -28,12 +27,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -66,150 +66,103 @@ class OrderControllerIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
+
     @MockitoBean
     private InventoryClient inventoryClient;
 
-    @MockitoBean
-    private OrderKafkaProducer orderKafkaProducer;
-
     @BeforeEach
     void setUp() {
+        outboxEventRepository.deleteAll();
+        orderRepository.deleteAll();
         userRepository.deleteAll();
     }
 
     @Test
-    void createOrder_ShouldReturnOrder_WhenProductIsAvailable() throws Exception {
-        // given
-        User user = userRepository.saveAndFlush(new User(
-                null,
-                "user",
-                "encodedPassword",
-                "user@example.com",
-                Role.USER
-        ));
+    void createOrder_ShouldReturnOrder_WhenProductIsAvailable()
+            throws Exception {
 
+        // given
+        User user = createUser();
         UUID productId = UUID.randomUUID();
 
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": 2
-                        }
-                    ]
-                }
-                """.formatted(productId);
-
-        ProductAvailability availability = ProductAvailability.newBuilder()
-                .setId(productId.toString())
-                .setName("Laptop")
-                .setPrice(1000.0)
-                .setSale(0.0)
-                .setIsAvailable(true)
-                .build();
-
         given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
-                .willReturn(List.of(availability));
+                .willReturn(List.of(
+                        availableProduct(productId, "Laptop", 1000.0, 0.0)
+                ));
 
         // when
-        mockMvc.perform(post("/api/orders")
+        String response = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(requestJson(productId, 2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").isNotEmpty())
-                .andExpect(jsonPath("$.userId").value(user.getId().toString()))
+                .andExpect(jsonPath("$.userId")
+                        .value(user.getId().toString()))
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].productId").value(productId.toString()))
-                .andExpect(jsonPath("$.items[0].productName").value("Laptop"))
+                .andExpect(jsonPath("$.items[0].productId")
+                        .value(productId.toString()))
+                .andExpect(jsonPath("$.items[0].productName")
+                        .value("Laptop"))
                 .andExpect(jsonPath("$.items[0].quantity").value(2))
                 .andExpect(jsonPath("$.items[0].totalPrice").value(2000.0))
-                .andExpect(jsonPath("$.totalPrice").value(2000.0));
+                .andExpect(jsonPath("$.totalPrice").value(2000.0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         // then
-        verify(inventoryClient).writeOffProductProducts(
-                List.of(new ProductItem(productId.toString(), 2))
+        UUID orderId = extractOrderId(response);
+
+        verify(inventoryClient).writeOffProducts(
+                eq(List.of(new ProductItem(productId.toString(), 2))),
+                eq(orderId)
         );
 
-        ArgumentCaptor<OrderResponse> captor =
-                ArgumentCaptor.forClass(OrderResponse.class);
-
-        verify(orderKafkaProducer).sendOrder(captor.capture());
-
-        OrderResponse sentOrder = captor.getValue();
-
-        assertThat(sentOrder.userId()).isEqualTo(user.getId());
-        assertThat(sentOrder.items()).hasSize(1);
-        assertThat(sentOrder.totalPrice())
-                .isEqualByComparingTo(new BigDecimal("2000.00"));
+        assertCreatedOrderAndOutboxEvent(orderId);
     }
 
     @Test
-    void createOrder_ShouldApplyDiscount_WhenProductHasSale() throws Exception {
-        // given
-        userRepository.saveAndFlush(new User(
-                null,
-                "user",
-                "encodedPassword",
-                "user@example.com",
-                Role.USER
-        ));
+    void createOrder_ShouldApplyDiscount_WhenProductHasSale()
+            throws Exception {
 
+        // given
+        createUser();
         UUID productId = UUID.randomUUID();
 
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": 3
-                        }
-                    ]
-                }
-                """.formatted(productId);
-
-        ProductAvailability availability = ProductAvailability.newBuilder()
-                .setId(productId.toString())
-                .setName("Keyboard")
-                .setPrice(200.0)
-                .setSale(10.0)
-                .setIsAvailable(true)
-                .build();
-
         given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
-                .willReturn(List.of(availability));
+                .willReturn(List.of(
+                        availableProduct(productId, "Keyboard", 200.0, 10.0)
+                ));
 
         // when
-        mockMvc.perform(post("/api/orders")
+        String response = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(requestJson(productId, 3)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].price").value(200.0))
                 .andExpect(jsonPath("$.items[0].sale").value(10.0))
                 .andExpect(jsonPath("$.items[0].quantity").value(3))
                 .andExpect(jsonPath("$.items[0].totalPrice").value(540.0))
-                .andExpect(jsonPath("$.totalPrice").value(540.0));
+                .andExpect(jsonPath("$.totalPrice").value(540.0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         // then
-        ArgumentCaptor<OrderResponse> captor =
-                ArgumentCaptor.forClass(OrderResponse.class);
-
-        verify(orderKafkaProducer).sendOrder(captor.capture());
-
-        assertThat(captor.getValue().totalPrice())
-                .isEqualByComparingTo(new BigDecimal("540.00"));
+        assertCreatedOrderAndOutboxEvent(extractOrderId(response));
     }
 
     @Test
-    void createOrder_ShouldCalculateTotalPrice_WhenOrderContainsMultipleProducts() throws Exception {
+    void createOrder_ShouldCalculateTotalPrice_WhenOrderContainsMultipleProducts()
+            throws Exception {
+
         // given
-        userRepository.saveAndFlush(new User(
-                null,
-                "user",
-                "encodedPassword",
-                "user@example.com",
-                Role.USER
-        ));
+        createUser();
 
         UUID firstProductId = UUID.randomUUID();
         UUID secondProductId = UUID.randomUUID();
@@ -229,70 +182,48 @@ class OrderControllerIntegrationTest {
                 }
                 """.formatted(firstProductId, secondProductId);
 
-        ProductAvailability firstAvailability = ProductAvailability.newBuilder()
-                .setId(firstProductId.toString())
-                .setName("Mouse")
-                .setPrice(100.0)
-                .setSale(0.0)
-                .setIsAvailable(true)
-                .build();
-
-        ProductAvailability secondAvailability = ProductAvailability.newBuilder()
-                .setId(secondProductId.toString())
-                .setName("Monitor")
-                .setPrice(500.0)
-                .setSale(20.0)
-                .setIsAvailable(true)
-                .build();
-
         given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
-                .willReturn(List.of(firstAvailability, secondAvailability));
+                .willReturn(List.of(
+                        availableProduct(firstProductId, "Mouse", 100.0, 0.0),
+                        availableProduct(secondProductId, "Monitor", 500.0, 20.0)
+                ));
 
         // when
-        mockMvc.perform(post("/api/orders")
+        String response = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
                 .andExpect(jsonPath("$.items[0].totalPrice").value(200.0))
                 .andExpect(jsonPath("$.items[1].totalPrice").value(400.0))
-                .andExpect(jsonPath("$.totalPrice").value(600.0));
+                .andExpect(jsonPath("$.totalPrice").value(600.0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
 
         // then
-        verify(inventoryClient).writeOffProductProducts(List.of(
-                new ProductItem(firstProductId.toString(), 2),
-                new ProductItem(secondProductId.toString(), 1)
-        ));
+        UUID orderId = extractOrderId(response);
 
-        ArgumentCaptor<OrderResponse> captor =
-                ArgumentCaptor.forClass(OrderResponse.class);
+        verify(inventoryClient).writeOffProducts(
+                eq(List.of(
+                        new ProductItem(firstProductId.toString(), 2),
+                        new ProductItem(secondProductId.toString(), 1)
+                )),
+                eq(orderId)
+        );
 
-        verify(orderKafkaProducer).sendOrder(captor.capture());
-
-        assertThat(captor.getValue().items()).hasSize(2);
-        assertThat(captor.getValue().totalPrice())
-                .isEqualByComparingTo(new BigDecimal("600.00"));
+        assertCreatedOrderAndOutboxEvent(orderId);
     }
 
     @Test
-    void createOrder_ShouldReturnBadRequest_WhenProductIsUnavailable() throws Exception {
+    void createOrder_ShouldReturnBadRequest_WhenProductIsUnavailable()
+            throws Exception {
+
         // given
         UUID productId = UUID.randomUUID();
 
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": 10
-                        }
-                    ]
-                }
-                """.formatted(productId);
-
         ProductAvailability availability = ProductAvailability.newBuilder()
                 .setId(productId.toString())
-                .setName("Laptop")
                 .setIsAvailable(false)
                 .build();
 
@@ -302,168 +233,218 @@ class OrderControllerIntegrationTest {
         // when
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(requestJson(productId, 10)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message")
                         .value("Products not available: " + productId));
 
         // then
-        verify(inventoryClient, never()).writeOffProductProducts(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+        verify(inventoryClient, never())
+                .writeOffProducts(anyList(), any(UUID.class));
+
+        assertThat(orderRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
     }
 
     @Test
-    void createOrder_ShouldReturnBadRequest_WhenWriteOffFails() throws Exception {
+    void createOrder_ShouldReturnConflict_WhenWriteOffIsRejected()
+            throws Exception {
+
         // given
+        createUser();
         UUID productId = UUID.randomUUID();
 
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": 2
-                        }
-                    ]
-                }
-                """.formatted(productId);
-
-        ProductAvailability availability = ProductAvailability.newBuilder()
-                .setId(productId.toString())
-                .setName("Laptop")
-                .setPrice(1000.0)
-                .setSale(0.0)
-                .setIsAvailable(true)
-                .build();
-
         given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
-                .willReturn(List.of(availability));
+                .willReturn(List.of(
+                        availableProduct(productId, "Laptop", 1000.0, 0.0)
+                ));
 
-        doThrow(new OrderException("Inventory write-off failed"))
+        doThrow(Status.FAILED_PRECONDITION.asRuntimeException())
                 .when(inventoryClient)
-                .writeOffProductProducts(any());
+                .writeOffProducts(anyList(), any(UUID.class));
 
         // when
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message")
-                        .value("Inventory write-off failed"));
+                        .content(requestJson(productId, 2)))
+                .andExpect(status().isConflict());
 
         // then
-        verify(inventoryClient).writeOffProductProducts(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+        assertThat(orderRepository.count()).isEqualTo(1);
+
+        assertThat(orderRepository.findAll().getFirst().getStatus().name())
+                .isEqualTo("FAILED");
+
+        assertThat(outboxEventRepository.count()).isZero();
     }
 
     @Test
-    void createOrder_ShouldReturnBadRequest_WhenUserDoesNotExist() throws Exception {
+    void createOrder_ShouldReturnAccepted_WhenInventoryUnavailable()
+            throws Exception {
+
         // given
+        createUser();
         UUID productId = UUID.randomUUID();
 
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": 1
-                        }
-                    ]
-                }
-                """.formatted(productId);
-
-        ProductAvailability availability = ProductAvailability.newBuilder()
-                .setId(productId.toString())
-                .setName("Laptop")
-                .setPrice(1000.0)
-                .setIsAvailable(true)
-                .build();
-
         given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
-                .willReturn(List.of(availability));
+                .willReturn(List.of(
+                        availableProduct(productId, "Laptop", 1000.0, 0.0)
+                ));
+
+        doThrow(Status.UNAVAILABLE.asRuntimeException())
+                .when(inventoryClient)
+                .writeOffProducts(anyList(), any(UUID.class));
 
         // when
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(requestJson(productId, 2)))
+                .andExpect(status().isAccepted());
+
+        // then
+        assertThat(orderRepository.count()).isEqualTo(1);
+
+        assertThat(orderRepository.findAll().getFirst().getStatus().name())
+                .isEqualTo("PENDING");
+
+        assertThat(outboxEventRepository.count()).isZero();
+    }
+
+    @Test
+    void createOrder_ShouldReturnBadRequest_WhenUserDoesNotExist()
+            throws Exception {
+
+        // given
+        UUID productId = UUID.randomUUID();
+
+        given(inventoryClient.checkAvailability(any(CreateOrderRequest.class)))
+                .willReturn(List.of(
+                        availableProduct(productId, "Laptop", 1000.0, 0.0)
+                ));
+
+        // when
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(productId, 1)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message")
                         .value("User with username user not found"));
 
         // then
-        verify(inventoryClient).writeOffProductProducts(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+        verify(inventoryClient, never())
+                .writeOffProducts(anyList(), any(UUID.class));
+
+        assertThat(orderRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
     }
 
     @Test
-    void createOrder_ShouldReturnBadRequest_WhenItemsAreEmpty() throws Exception {
-        // given
-        String request = """
-                {
-                    "items": []
-                }
-                """;
+    void createOrder_ShouldReturnBadRequest_WhenItemsAreEmpty()
+            throws Exception {
 
-        // when
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content("""
+                                {
+                                    "items": []
+                                }
+                                """))
                 .andExpect(status().isBadRequest());
 
-        // then
-        verify(inventoryClient, never()).checkAvailability(any());
-        verify(inventoryClient, never()).writeOffProductProducts(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+        verify(inventoryClient, never())
+                .checkAvailability(any());
+
+        assertThat(orderRepository.count()).isZero();
     }
 
     @Test
-    void createOrder_ShouldReturnBadRequest_WhenQuantityIsNegative() throws Exception {
-        // given
-        String request = """
-                {
-                    "items": [
-                        {
-                            "id": "%s",
-                            "quantity": -1
-                        }
-                    ]
-                }
-                """.formatted(UUID.randomUUID());
+    void createOrder_ShouldReturnBadRequest_WhenQuantityIsNegative()
+            throws Exception {
 
-        // when
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(requestJson(UUID.randomUUID(), -1)))
                 .andExpect(status().isBadRequest());
 
-        // then
-        verify(inventoryClient, never()).checkAvailability(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+        verify(inventoryClient, never())
+                .checkAvailability(any());
+
+        assertThat(orderRepository.count()).isZero();
     }
 
     @Test
     @WithAnonymousUser
-    void createOrder_ShouldReturnUnauthorized_WhenUserIsNotAuthenticated() throws Exception {
-        // given
-        String request = """
+    void createOrder_ShouldReturnForbidden_WhenUserIsNotAuthenticated()
+            throws Exception {
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(UUID.randomUUID(), 1)))
+                .andExpect(status().isForbidden());
+
+        verify(inventoryClient, never())
+                .checkAvailability(any());
+
+        assertThat(orderRepository.count()).isZero();
+    }
+
+    private User createUser() {
+        return userRepository.saveAndFlush(new User(
+                null,
+                "user",
+                "encodedPassword",
+                "user@example.com",
+                Role.USER
+        ));
+    }
+
+    private ProductAvailability availableProduct(
+            UUID productId,
+            String name,
+            double price,
+            double sale
+    ) {
+        return ProductAvailability.newBuilder()
+                .setId(productId.toString())
+                .setName(name)
+                .setPrice(price)
+                .setSale(sale)
+                .setIsAvailable(true)
+                .build();
+    }
+
+    private String requestJson(UUID productId, int quantity) {
+        return """
                 {
                     "items": [
                         {
                             "id": "%s",
-                            "quantity": 1
+                            "quantity": %d
                         }
                     ]
                 }
-                """.formatted(UUID.randomUUID());
+                """.formatted(productId, quantity);
+    }
 
-        // when
-        mockMvc.perform(post("/api/orders")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isForbidden());
+    private UUID extractOrderId(String response) {
+        return UUID.fromString(
+                com.jayway.jsonpath.JsonPath.read(
+                        response, "$.orderId"
+                )
+        );
+    }
 
-        // then
-        verify(inventoryClient, never()).checkAvailability(any());
-        verify(orderKafkaProducer, never()).sendOrder(any());
+    private void assertCreatedOrderAndOutboxEvent(UUID orderId) {
+        var order = orderRepository.findById(orderId).orElseThrow();
+
+        assertThat(order.getStatus().name()).isEqualTo("CREATED");
+
+        assertThat(outboxEventRepository.findAll())
+                .anySatisfy(event -> {
+                    assertThat(event.getOrderId()).isEqualTo(orderId);
+                    assertThat(event.getTopic()).isEqualTo("orders");
+                    assertThat(event.getPayload())
+                            .contains(orderId.toString());
+                });
     }
 }

@@ -22,5 +22,5 @@ public interface ProductService {
 
     List<ProductAvailability> checkAvailability(List<ProductItem> productItems);
 
-    void writeOffProducts(List<ProductItem> productItems);
+    void writeOffProducts(UUID orderId, List<ProductItem> productItems);
 }

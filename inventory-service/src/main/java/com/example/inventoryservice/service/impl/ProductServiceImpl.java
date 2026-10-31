@@ -7,6 +7,7 @@ import com.example.inventoryservice.exception.ProductNotFoundException;
 import com.example.inventoryservice.grpc.ProductAvailability;
 import com.example.inventoryservice.grpc.ProductItem;
 import com.example.inventoryservice.mapper.ProductMapper;
+import com.example.inventoryservice.repository.InventoryOperationRepository;
 import com.example.inventoryservice.repository.ProductRepository;
 import com.example.inventoryservice.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +30,7 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
+    private final InventoryOperationRepository inventoryOperationRepository;
 
     @Override
     public Page<ProductResponse> findAll(Pageable pageable) {
@@ -94,10 +97,22 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public void writeOffProducts(List<ProductItem> productItems) {
+    public void writeOffProducts(UUID orderId, List<ProductItem> productItems) {
         log.info("Writing off products, items={}", productItems);
-        for (ProductItem productItem : productItems) {
-            Product product = productRepository.findById(UUID.fromString(productItem.getId())).orElseThrow(() ->
+
+        int inserted = inventoryOperationRepository.registerOperation(orderId);
+
+        if (inserted == 0) {
+            log.info("Order {} already processed", orderId);
+            return;
+        }
+
+        List<ProductItem> sortedItems = productItems.stream()
+                .sorted(Comparator.comparing(ProductItem::getId))
+                .toList();
+
+        for (ProductItem productItem : sortedItems) {
+            Product product = productRepository.findByIdForUpdate(UUID.fromString(productItem.getId())).orElseThrow(() ->
                     new ProductNotFoundException("Product with id " + productItem.getId() + " not found"));
             product.setQuantity(product.getQuantity() - productItem.getQuantity());
         }

@@ -6,11 +6,14 @@ import com.example.orderservice.dto.OrderResponse;
 import com.example.orderservice.dto.ProductItem;
 import com.example.orderservice.entity.User;
 import com.example.orderservice.exception.OrderException;
+import com.example.orderservice.exception.OrderPendingException;
 import com.example.orderservice.grpc.InventoryClient;
 import com.example.orderservice.grpc.ProductAvailability;
-import com.example.orderservice.kafka.OrderKafkaProducer;
+import com.example.orderservice.service.OrderPersistenceService;
 import com.example.orderservice.service.OrderService;
 import com.example.orderservice.service.UserService;
+
+import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,26 +32,33 @@ public class OrderServiceImpl implements OrderService {
 
     private final InventoryClient inventoryClient;
     private final UserService userService;
-    private final OrderKafkaProducer orderKafkaProducer;
+    private final OrderPersistenceService orderPersistenceService;
 
     @Override
     public OrderResponse createOrder(CreateOrderRequest createOrderRequest) {
+
         log.info("Creating order, items={}", createOrderRequest.items());
+
         List<ProductAvailability> productAvailabilities = inventoryClient.checkAvailability(createOrderRequest);
+
         List<String> unavailableProductIds = new ArrayList<>();
+
         for (ProductAvailability productAvailability : productAvailabilities) {
             if (!productAvailability.getIsAvailable()) {
                 unavailableProductIds.add(productAvailability.getId());
             }
         }
+
         if (!unavailableProductIds.isEmpty()) {
             throw new OrderException("Products not available: " + String.join(", ", unavailableProductIds));
         }
 
-        UUID orderId = UUID.randomUUID();
-        inventoryClient.writeOffProductProducts(createOrderRequest.items());
         User user = userService.findUserByUsername(SecurityContextHolder.getContext().getAuthentication().getName());
+
+        UUID orderId = UUID.randomUUID();
+
         List<OrderItemResponse> items = new ArrayList<>();
+
         for (int i = 0; i < productAvailabilities.size(); i++) {
             ProductAvailability availability = productAvailabilities.get(i);
             ProductItem productItem = createOrderRequest.items().get(i);
@@ -58,7 +68,11 @@ public class OrderServiceImpl implements OrderService {
 
             BigDecimal totalPrice = price
                     .multiply(BigDecimal.valueOf(100).subtract(sale))
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    .divide(
+                            BigDecimal.valueOf(100),
+                            2,
+                            RoundingMode.HALF_UP
+                    )
                     .multiply(BigDecimal.valueOf(productItem.quantity()))
                     .setScale(2, RoundingMode.HALF_UP);
 
@@ -71,21 +85,43 @@ public class OrderServiceImpl implements OrderService {
                     .totalPrice(totalPrice)
                     .build());
         }
+
         OrderResponse orderResponse = OrderResponse.builder()
                 .orderId(orderId)
                 .userId(user.getId())
                 .items(items)
-                .totalPrice(items.stream().map(OrderItemResponse::totalPrice)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add))
+                .totalPrice(
+                        items.stream()
+                                .map(OrderItemResponse::totalPrice)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                )
                 .build();
 
-        orderKafkaProducer.sendOrder(orderResponse);
-        log.info(
-                "Order created successfully, orderId={}, userId={}, totalPrice={}",
-                orderResponse.orderId(),
-                orderResponse.userId(),
-                orderResponse.totalPrice()
-        );
+        orderPersistenceService.savePendingOrder(orderResponse);
+
+        try {
+            inventoryClient.writeOffProducts(createOrderRequest.items(), orderId);
+
+        } catch (StatusRuntimeException e) {
+
+            switch (e.getStatus().getCode()) {
+                case FAILED_PRECONDITION, NOT_FOUND, INVALID_ARGUMENT -> {
+                    orderPersistenceService.markOrderFailed(orderId);
+                    log.warn("Order {} failed: {}", orderId, e.getStatus().getCode());
+                    throw e;
+                }
+                case UNAVAILABLE, DEADLINE_EXCEEDED -> {
+                    log.warn("Order {} remains PENDING for retry: {}", orderId, e.getStatus().getCode());
+                    throw new OrderPendingException(orderId, e);
+                }
+                default -> {
+                    log.error("Unexpected Inventory error, orderId={}, status={}", orderId, e.getStatus(), e);
+                    throw e;
+                }
+            }
+        }
+        orderPersistenceService.markOrderCreated(orderId, orderResponse);
+        log.info("Order created successfully, orderId={}, userId={}, totalPrice={}", orderResponse.orderId(), orderResponse.userId(), orderResponse.totalPrice());
         return orderResponse;
     }
 }

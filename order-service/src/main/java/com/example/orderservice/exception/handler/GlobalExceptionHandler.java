@@ -5,7 +5,11 @@ import com.example.orderservice.dto.ValidationErrorResponse;
 import com.example.orderservice.dto.Violation;
 import com.example.orderservice.exception.AuthException;
 import com.example.orderservice.exception.OrderException;
+import com.example.orderservice.exception.OrderPendingException;
 import com.example.orderservice.exception.UserNotFoundException;
+import io.grpc.StatusRuntimeException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.List;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -37,5 +42,33 @@ public class GlobalExceptionHandler {
                 .map(error -> new Violation(error.getField(), error.getDefaultMessage()))
                 .toList();
         return ResponseEntity.badRequest().body(new ValidationErrorResponse(violations));
+    }
+
+    @ExceptionHandler(StatusRuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleGrpcException(
+            StatusRuntimeException e
+    ) {
+        HttpStatus status = switch (e.getStatus().getCode()) {
+            case INVALID_ARGUMENT -> HttpStatus.BAD_REQUEST;
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case FAILED_PRECONDITION -> HttpStatus.CONFLICT;
+            case UNAVAILABLE, DEADLINE_EXCEEDED -> HttpStatus.SERVICE_UNAVAILABLE;
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+
+        log.error("Inventory gRPC error: {}", e.getStatus(), e);
+
+        return ResponseEntity.status(status).body(new ErrorResponse("Inventory service error: " + e.getStatus().getCode()));
+    }
+
+    @ExceptionHandler(OrderPendingException.class)
+    public ResponseEntity<ErrorResponse> handleOrderPending(
+            OrderPendingException e
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.ACCEPTED)
+                .body(new ErrorResponse(
+                        "Order " + e.getOrderId() + " is pending"
+                ));
     }
 }

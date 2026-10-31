@@ -3,3 +3,7 @@ databaseChangeLog:
       relativeToChangelogFile: true
       file:
         v1-create-table-orders-changelog.yml
+  - include:
+      relativeToChangelogFile: true
+      file:
+        v2-create-processed-orders-changelog.yml

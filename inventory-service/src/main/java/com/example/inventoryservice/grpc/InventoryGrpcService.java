@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.grpc.server.service.GrpcService;
 
 import java.util.List;
+import java.util.UUID;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -26,7 +27,7 @@ public class InventoryGrpcService extends InventoryServiceGrpc.InventoryServiceI
 
     @Override
     public void writeOffProducts(WriteOffRequest request, StreamObserver<Empty> responseObserver) {
-        productService.writeOffProducts(request.getItemsList());
+        productService.writeOffProducts(UUID.fromString(request.getOrderId()), request.getItemsList());
         responseObserver.onNext(Empty.getDefaultInstance());
         responseObserver.onCompleted();
     }

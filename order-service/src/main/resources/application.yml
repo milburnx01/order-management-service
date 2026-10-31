@@ -18,6 +18,8 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
         "[spring.json.add.type.headers]": false
+        enable.idempotence: true
+      acks: all
 logging:
   level:
     root: INFO

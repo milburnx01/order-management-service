@@ -1,12 +1,11 @@
 package com.example.orderservice.grpc;
 
 import com.example.orderservice.dto.CreateOrderRequest;
-import com.example.orderservice.exception.OrderException;
-import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -30,19 +29,19 @@ public class InventoryClient {
         return response.getProductAvailabilitiesList();
     }
 
-    public void writeOffProductProducts(List<com.example.orderservice.dto.ProductItem> items) {
+    public void writeOffProducts(List<com.example.orderservice.dto.ProductItem> items, UUID orderId) {
+        List<ProductItem> productItems = items.stream()
+                .map(item -> ProductItem.newBuilder()
+                        .setId(item.id())
+                        .setQuantity(item.quantity())
+                        .build())
+                .toList();
 
-        List<ProductItem> productItems = items.stream().map(item -> ProductItem.newBuilder()
-                .setId(item.id())
-                .setQuantity(item.quantity())
-                .build()).toList();
         WriteOffRequest writeOffRequest = WriteOffRequest.newBuilder()
                 .addAllItems(productItems)
+                .setOrderId(orderId.toString())
                 .build();
-        try {
-            stub.writeOffProducts(writeOffRequest);
-        } catch (StatusRuntimeException e) {
-            throw new OrderException(e.getMessage());
-        }
+
+        stub.writeOffProducts(writeOffRequest);
     }
 }

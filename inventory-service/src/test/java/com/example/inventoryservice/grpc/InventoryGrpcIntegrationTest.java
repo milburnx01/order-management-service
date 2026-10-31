@@ -1,4 +1,3 @@
-
 package com.example.inventoryservice.grpc;
 
 import com.example.inventoryservice.entity.Product;
@@ -186,6 +185,7 @@ class InventoryGrpcIntegrationTest {
         );
 
         WriteOffRequest request = WriteOffRequest.newBuilder()
+                .setOrderId(UUID.randomUUID().toString())
                 .addItems(ProductItem.newBuilder()
                         .setId(product.getId().toString())
                         .setQuantity(4)
@@ -208,6 +208,7 @@ class InventoryGrpcIntegrationTest {
         UUID productId = UUID.randomUUID();
 
         WriteOffRequest request = WriteOffRequest.newBuilder()
+                .setOrderId(UUID.randomUUID().toString())
                 .addItems(ProductItem.newBuilder()
                         .setId(productId.toString())
                         .setQuantity(2)
@@ -245,6 +246,7 @@ class InventoryGrpcIntegrationTest {
         UUID missingProductId = UUID.randomUUID();
 
         WriteOffRequest request = WriteOffRequest.newBuilder()
+                .setOrderId(UUID.randomUUID().toString())
                 .addItems(ProductItem.newBuilder()
                         .setId(product.getId().toString())
                         .setQuantity(4)
@@ -271,5 +273,48 @@ class InventoryGrpcIntegrationTest {
                 .orElseThrow();
 
         assertThat(unchangedProduct.getQuantity()).isEqualTo(10);
+    }
+
+    @Test
+    void writeOffProducts_ShouldNotDecreaseQuantityTwice_ForSameOrderId() {
+        // given
+        Product product = productRepository.saveAndFlush(
+                new Product(
+                        null,
+                        "Laptop",
+                        10,
+                        new BigDecimal("1000.00"),
+                        BigDecimal.ZERO
+                )
+        );
+
+        UUID orderId = UUID.randomUUID();
+
+        WriteOffRequest request = WriteOffRequest.newBuilder()
+                .setOrderId(orderId.toString())
+                .addItems(ProductItem.newBuilder()
+                        .setId(product.getId().toString())
+                        .setQuantity(3)
+                        .build())
+                .build();
+
+        // when: первое списание
+        stub.writeOffProducts(request);
+
+        Product afterFirstCall = productRepository
+                .findById(product.getId())
+                .orElseThrow();
+
+        assertThat(afterFirstCall.getQuantity()).isEqualTo(7);
+
+        // when: повторяем ТОТ ЖЕ запрос с тем же orderId
+        stub.writeOffProducts(request);
+
+        // then: количество не должно измениться
+        Product afterSecondCall = productRepository
+                .findById(product.getId())
+                .orElseThrow();
+
+        assertThat(afterSecondCall.getQuantity()).isEqualTo(7);
     }
 }

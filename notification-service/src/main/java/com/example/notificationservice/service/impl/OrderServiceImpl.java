@@ -6,6 +6,7 @@ import com.example.notificationservice.dto.OrderResponse;
 import com.example.notificationservice.entity.Order;
 import com.example.notificationservice.mapper.OrderMapper;
 import com.example.notificationservice.repository.OrderRepository;
+import com.example.notificationservice.repository.ProcessedOrderIdRepository;
 import com.example.notificationservice.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
+    private final ProcessedOrderIdRepository processedOrderIdRepository;
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
 
@@ -51,10 +53,20 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     @Override
     public void createOrder(OrderCreatedEvent orderCreatedEvent) {
+
+        UUID orderId = orderCreatedEvent.orderId();
+
         log.info("Creating order, orderId={}, userId={}, itemsCount={}",
                 orderCreatedEvent.orderId(),
                 orderCreatedEvent.userId(),
                 orderCreatedEvent.items().size());
+
+        int inserted = processedOrderIdRepository.insertIfAbsent(orderId);
+
+        if (inserted == 0) {
+            log.info("Order already processed, skipping, orderId={}", orderId);
+            return;
+        }
 
         for (OrderItem item: orderCreatedEvent.items()) {
             Order order = Order.builder()
