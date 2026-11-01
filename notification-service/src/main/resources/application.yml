@@ -1,10 +1,14 @@
 spring:
+  application:
+    name: notification-service
   datasource:
     driver-class-name: org.postgresql.Driver
     url: ${NOTIFICATION_DB_URL}
     username: ${NOTIFICATION_DB_USER}
     password: ${NOTIFICATION_DB_PASSWORD}
   kafka:
+    listener:
+      observation-enabled: true
     bootstrap-servers: localhost:9092
     consumer:
       group-id: notification-service
@@ -23,7 +27,7 @@ logging:
   file:
     name: logs/application.log
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [${spring.application.name},traceId=%X{traceId:-},spanId=%X{spanId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [${spring.application.name},traceId=%X{traceId:-},spanId=%X{spanId:-}] %logger{36} - %msg%n"
 server:
   port: 8082

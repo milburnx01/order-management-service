@@ -12,6 +12,7 @@ import com.example.orderservice.repository.OrderRepository;
 import com.example.orderservice.repository.OutboxEventRepository;
 import com.example.orderservice.service.OrderPersistenceService;
 
+import com.example.orderservice.tracing.StoredTraceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +27,14 @@ public class OrderPersistenceServiceImpl implements OrderPersistenceService {
     private final OrderRepository orderRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final StoredTraceContext traceContext;
 
     @Override
     @Transactional
     public void savePendingOrder(OrderResponse response) {
 
         Order order = new Order();
-
+        order.setTraceContext(traceContext.capture());
         order.setId(response.orderId());
         order.setUserId(response.userId());
         order.setStatus(OrderStatus.PENDING);
@@ -71,6 +73,7 @@ public class OrderPersistenceServiceImpl implements OrderPersistenceService {
         String payload = objectMapper.writeValueAsString(response);
 
         OutboxEvent event = new OutboxEvent();
+        event.setTraceContext(traceContext.capture());
         event.setOrderId(orderId);
         event.setTopic("orders");
         event.setPayload(payload);

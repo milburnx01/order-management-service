@@ -9,6 +9,7 @@ import com.example.orderservice.mapper.OrderMapper;
 import com.example.orderservice.repository.OrderRepository;
 import com.example.orderservice.service.OrderPersistenceService;
 
+import com.example.orderservice.tracing.StoredTraceContext;
 import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,17 +27,24 @@ public class PendingOrderProcessor {
     private final OrderPersistenceService orderPersistenceService;
     private final InventoryClient inventoryClient;
     private final OrderMapper orderMapper;
+    private final StoredTraceContext traceContext;
 
     @Scheduled(fixedDelay = 30000)
     public void processPendingOrders() {
-
         List<Order> pendingOrders = orderRepository.findByStatus(OrderStatus.PENDING);
+
         for (Order order : pendingOrders) {
             try {
-                processOrder(order);
-            } catch (StatusRuntimeException e) {
-                handleGrpcError(order, e);
-
+                traceContext.run(order.getTraceContext(),
+                        "order.retry",
+                        () -> {
+                            try {
+                                processOrder(order);
+                            } catch (StatusRuntimeException e) {
+                                handleGrpcError(order, e);
+                            }
+                        }
+                );
             } catch (Exception e) {
                 log.error("Unexpected error processing order {}", order.getId(), e);
             }

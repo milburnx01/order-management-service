@@ -6,6 +6,7 @@ import com.example.orderservice.entity.OutboxEvent;
 import com.example.orderservice.entity.util.OutboxStatus;
 import com.example.orderservice.repository.OutboxEventRepository;
 
+import com.example.orderservice.tracing.StoredTraceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -23,15 +24,14 @@ public class OutboxPublisher {
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, OrderResponse> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final StoredTraceContext traceContext;
 
     @Scheduled(fixedDelay = 5000)
     public void publishPendingEvents() {
-
         List<OutboxEvent> events = outboxEventRepository.findByStatusOrderByCreatedAtAsc(OutboxStatus.PENDING);
-
         for (OutboxEvent event : events) {
             try {
-                publishEvent(event);
+                traceContext.run(event.getTraceContext(), "outbox.publish", () -> publishEvent(event));
             } catch (Exception e) {
                 log.error("Failed to publish outbox event {}", event.getId(), e);
             }

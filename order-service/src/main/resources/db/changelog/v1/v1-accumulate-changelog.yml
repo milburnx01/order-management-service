@@ -11,3 +11,6 @@ databaseChangeLog:
   - include:
       relativeToChangelogFile: true
       file: v1-add-order-pricing.yml
+  - include:
+      relativeToChangelogFile: true
+      file: v1-add-trace-context.yml
