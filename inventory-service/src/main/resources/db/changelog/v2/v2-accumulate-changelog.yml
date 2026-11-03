@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: v2-alter-products-change-column-sale
+      author: andrey anisimov
+      changes:
+        - modifyDataType:
+            tableName: products
+            columnName: sale
+            newDataType: numeric(5,2)

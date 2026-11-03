@@ -1,0 +1,10 @@
+spring:
+  grpc:
+    client:
+      channel:
+        inventory:
+          target: static://localhost:9090
+jwt:
+  secret:
+    access: jwtsecretaccessjwtsecretaccessjwtsecretaccess
+    refresh: jwtsecretrefreshjwtsecretrefreshjwtsecretrefresh

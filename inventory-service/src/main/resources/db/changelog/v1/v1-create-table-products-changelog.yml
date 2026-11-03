@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: v1-create-table-products
+      author: andrey anisimov
+      changes:
+        - createTable:
+            tableName: products
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price
+                  type: numeric(19,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sale
+                  type: numeric(19,2)
+                  constraints:
+                    nullable: false

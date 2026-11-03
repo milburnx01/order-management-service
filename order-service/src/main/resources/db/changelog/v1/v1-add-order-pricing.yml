@@ -1,0 +1,31 @@
+
+databaseChangeLog:
+  - changeSet:
+      id: add-order-pricing
+      author: andrey anisimov
+      changes:
+        - addColumn:
+            tableName: orders
+            columns:
+              - column:
+                  name: total_price
+                  type: numeric(19,2)
+
+        - addColumn:
+            tableName: order_items
+            columns:
+              - column:
+                  name: product_name
+                  type: varchar(255)
+
+              - column:
+                  name: price
+                  type: numeric(19,2)
+
+              - column:
+                  name: sale
+                  type: numeric(10,2)
+
+              - column:
+                  name: total_price
+                  type: numeric(19,2)

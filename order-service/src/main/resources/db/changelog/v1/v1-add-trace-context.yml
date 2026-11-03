@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-order-and-outbox-trace-context
+      author: andrey anisimov
+      changes:
+        - addColumn:
+            tableName: orders
+            columns:
+              - column:
+                  name: trace_context
+                  type: TEXT
+        - addColumn:
+            tableName: outbox_events
+            columns:
+              - column:
+                  name: trace_context
+                  type: TEXT

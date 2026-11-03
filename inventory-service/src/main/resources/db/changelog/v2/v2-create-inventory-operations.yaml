@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-inventory-operations
+      author: developer
+      changes:
+        - createTable:
+            tableName: inventory_operations
+            columns:
+              - column:
+                  name: order_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false

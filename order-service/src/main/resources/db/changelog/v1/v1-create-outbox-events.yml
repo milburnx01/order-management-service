@@ -1,0 +1,50 @@
+
+databaseChangeLog:
+  - changeSet:
+      id: create-outbox-events
+      author: andrey anisimov
+      changes:
+        - createTable:
+            tableName: outbox_events
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+
+              - column:
+                  name: order_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: topic
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: payload
+                  type: text
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: status
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+
+        - addUniqueConstraint:
+            tableName: outbox_events
+            columnNames: order_id
+            constraintName: uk_outbox_order_id

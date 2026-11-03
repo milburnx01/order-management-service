@@ -1,0 +1,51 @@
+databaseChangeLog:
+  - changeSet:
+      id: v1-create-table-orders
+      author: andrey anisimov
+      changes:
+        - createTable:
+            tableName: orders
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    unique: true
+              - column:
+                  name: order_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: product_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price
+                  type: numeric(19,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sale
+                  type: numeric(19,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_price
+                  type: numeric(19,2)
+                  constraints:
+                    nullable: false

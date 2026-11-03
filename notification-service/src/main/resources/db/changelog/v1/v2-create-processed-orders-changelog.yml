@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: v2-create-table-processed-order-id
+      author: andrey anisimov
+      changes:
+        - createTable:
+            tableName: processed_order_id
+            columns:
+              - column:
+                  name: order_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: processed_at
+                  type: timestamp
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false

@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - include:
+      relativeToChangelogFile: true
+      file: v1-create-table-users-changelog.yml
+  - include:
+      relativeToChangelogFile: true
+      file: v1-create-table-orders-changelog.yml
+  - include:
+      relativeToChangelogFile: true
+      file: v1-create-outbox-events.yml
+  - include:
+      relativeToChangelogFile: true
+      file: v1-add-order-pricing.yml
+  - include:
+      relativeToChangelogFile: true
+      file: v1-add-trace-context.yml
